@@ -1,0 +1,21 @@
+# Java / Spring Boot
+.gradle/
+build/
+out/
+*.class
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Secrets / local config
+.env
+application-local.yml
+application-secret.yml
+application-local.properties
+application-secret.properties
+*.pem
+*.p12
+*.jks

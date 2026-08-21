@@ -18,23 +18,24 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 팀 스페이스를 생성·조회하고 이름 변경과 soft delete를 관리한다.
+ * TeamSpace 생성, 조회, 이름 변경과 soft delete 상태를 관리한다.
  */
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class TeamSpaceService {
+
     private final TeamSpaceRepository teamSpaceRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final UserRepository userRepository;
 
     public Long createTeamSpace(Long userId, TeamSpaceCreateRequestDto request) {
+        // TeamSpace 생성자를 LEADER 역할의 첫 번째 구성원으로 등록한다.
         TeamSpace teamSpace = TeamSpace.builder()
                 .name(request.getName())
                 .build();
         teamSpace = teamSpaceRepository.save(teamSpace);
         User user = userRepository.findById(userId).orElseThrow();
-        // 팀 스페이스 생성자는 최초 LEADER 팀원으로 함께 등록한다.
         TeamMember teamMember = TeamMember.builder()
                 .teamSpace(teamSpace)
                 .user(user)
@@ -47,6 +48,8 @@ public class TeamSpaceService {
     @Transactional(readOnly = true)
     public List<TeamSpaceResponseDto> getMyTeamSpaces(Long userId) {
         return teamMemberRepository.findByUser_UserId(userId).stream()
+                // soft delete된 TeamSpace는 참여 목록에서 제외한다.
+                .filter(tm -> tm.getTeamSpace().getDeletedAt() == null)
                 .map(tm -> TeamSpaceResponseDto.from(tm.getTeamSpace(), teamMemberRepository.findByTeamSpace_TeamSpaceId(tm.getTeamSpace().getTeamSpaceId()).size()))
                 .collect(Collectors.toList());
     }
@@ -55,6 +58,12 @@ public class TeamSpaceService {
     public TeamSpaceResponseDto getTeamSpace(Long teamSpaceId) {
         TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId)
                 .orElseThrow(() -> new IllegalArgumentException("팀 스페이스를 찾을 수 없습니다."));
+
+        // deletedAt이 기록된 TeamSpace는 상세 조회 대상에서 제외한다.
+        if (teamSpace.getDeletedAt() != null) {
+            throw new IllegalArgumentException("삭제된 팀 스페이스입니다.");
+        }
+
         Integer memberCount = teamMemberRepository.findByTeamSpace_TeamSpaceId(teamSpaceId).size();
         return TeamSpaceResponseDto.from(teamSpace, memberCount);
     }
@@ -68,9 +77,9 @@ public class TeamSpaceService {
     }
 
     public void deleteTeamSpace(Long teamSpaceId) {
+        // 레코드를 즉시 제거하지 않고 삭제 시각을 기록해 soft delete 처리한다.
         TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId)
                 .orElseThrow(() -> new IllegalArgumentException("팀 스페이스를 찾을 수 없습니다."));
-        // 실제 레코드는 유지하고 삭제 시각을 기록해 soft delete 처리한다.
         teamSpace.setDeletedAt(LocalDateTime.now());
     }
 }

@@ -29,7 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 회원가입과 일반·Google 로그인, JWT 세션 갱신·로그아웃 및 2단계 인증 절차를 관리한다.
+ * 회원가입, 일반·Google 로그인, JWT 기기 세션과 2단계 인증 흐름을 관리한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,7 +41,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
 
-    // 인증 대상별 2FA 코드와 검증 상태를 서버 메모리에 임시 보관한다.
+    // 인증 대상별 2FA 코드와 만료·재전송·실패 상태를 서버 메모리에 임시 보관한다.
     private final Map<String, TwoFactorSession> mfaSessions = new ConcurrentHashMap<>();
 
     @Getter
@@ -55,7 +55,7 @@ public class AuthService {
     }
 
     public Long signup(SignUpRequestDto request) {
-        // 중복 아이디를 차단하고 비밀번호를 암호화해 일반 사용자 계정을 생성한다.
+        // 로그인 ID 중복을 확인한 뒤 비밀번호를 암호화해 신규 사용자를 저장한다.
         if (userRepository.findByLoginId(request.getLoginId()).isPresent()) {
             throw new IllegalArgumentException("이미 사용 중인 아이디입니다.");
         }
@@ -72,7 +72,7 @@ public class AuthService {
     }
 
     public LoginResponseDto login(LoginRequestDto request) {
-        // 아이디와 비밀번호가 일치하면 토큰을 발급하고 기기별 로그인 세션을 만든다.
+        // 아이디와 비밀번호를 검증한 뒤 Access/Refresh Token과 기기 세션을 생성한다.
         User user = userRepository.findByLoginId(request.getLoginId())
                 .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 일치하지 않습니다."));
         if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
@@ -82,13 +82,12 @@ public class AuthService {
         return createLoginSession(user, request.getDeviceName());
     }
 
-    // Google 로그인 후 전달받은 사용자 정보를 확인해 계정을 연결하거나 새로 생성하고 로그인 세션을 만든다.
     public Map<String, Object> socialLogin(SocialLoginRequestDto request) {
+        // 클라이언트가 전달한 소셜 사용자 정보를 이메일 기준으로 기존 계정에 연결하거나 신규 계정을 생성한다.
         boolean isNewUser = false;
         Optional<User> optionalUser = userRepository.findByEmail(request.getEmail());
         User user;
 
-        // 같은 이메일의 일반 계정이 있으면 Google 식별 정보를 연결해 기존 계정을 그대로 사용한다.
         if (optionalUser.isPresent()) {
             user = optionalUser.get();
             if ("LOCAL".equals(user.getProvider())) {
@@ -96,10 +95,7 @@ public class AuthService {
                 user.setProviderId(request.getProviderId());
             }
         } else {
-            // 처음 로그인한 Google 사용자는 비밀번호가 없는 소셜 계정으로 새로 등록한다.
             isNewUser = true;
-
-            // 일반 로그인 아이디와 구분할 수 있도록 내부에서 사용할 고유 로그인 아이디를 만든다.
             String uniqueLoginId = request.getProvider().toLowerCase() + "_" + UUID.randomUUID().toString().substring(0, 8);
 
             user = User.builder()
@@ -127,8 +123,8 @@ public class AuthService {
         return response;
     }
 
-    // 일반·Google·2FA 로그인에서 공통으로 Access/Refresh Token과 기기별 로그인 세션을 생성한다.
     private LoginResponseDto createLoginSession(User user, String deviceName) {
+        // 앱 JWT를 발급하고 Refresh Token을 Device에 저장해 로그인 기기 세션을 구성한다.
         String accessToken = jwtTokenProvider.createAccessToken(user.getUserId());
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getUserId());
         Device device = Device.builder()
@@ -147,13 +143,13 @@ public class AuthService {
     }
 
     public LoginResponseDto refreshToken(String refreshToken) {
+        // 저장된 Refresh Token을 검증한 뒤 Access/Refresh Token을 함께 갱신한다.
         Device device = deviceRepository.findByRefreshToken(refreshToken)
                 .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다."));
         if (device.getExpiresAt().isBefore(LocalDateTime.now())) {
             deviceRepository.delete(device);
             throw new IllegalArgumentException("리프레시 토큰이 만료되었습니다.");
         }
-        // 유효한 Refresh Token을 사용할 때 Access Token과 Refresh Token을 함께 교체한다.
         String newAccessToken = jwtTokenProvider.createAccessToken(device.getUser().getUserId());
         String newRefreshToken = jwtTokenProvider.createRefreshToken(device.getUser().getUserId());
         device.setRefreshToken(newRefreshToken);
@@ -168,24 +164,28 @@ public class AuthService {
     }
 
     public void logout(Long userId, String type, String refreshToken) {
-        // ALL은 모든 기기 세션을, CURRENT는 전달된 Refresh Token의 본인 세션만 삭제한다.
         if ("ALL".equalsIgnoreCase(type)) {
             deviceRepository.deleteByUser_UserId(userId);
         } else {
-            if (refreshToken != null) {
-                deviceRepository.findByRefreshToken(refreshToken)
-                        .ifPresent(device -> {
-                            if (device.getUser().getUserId().equals(userId)) {
-                                deviceRepository.delete(device);
-                            }
-                        });
+            // CURRENT 로그아웃은 전달된 Refresh Token으로 대상 기기 세션을 식별한다.
+            if (refreshToken == null || refreshToken.isBlank()) {
+                throw new IllegalArgumentException("로그아웃할 리프레시 토큰이 전달되지 않았습니다.");
+            }
+
+            Device device = deviceRepository.findByRefreshToken(refreshToken)
+                    .orElseThrow(() -> new IllegalArgumentException("이미 로그아웃(무효화)된 상태입니다."));
+
+            // 토큰 소유자가 현재 사용자와 일치할 때만 해당 기기 세션을 제거한다.
+            if (device.getUser().getUserId().equals(userId)) {
+                deviceRepository.delete(device);
+            } else {
+                throw new IllegalArgumentException("잘못된 접근입니다.");
             }
         }
     }
 
     @Transactional(readOnly = true)
     public String findLoginId(FindIdPwRequestDto request) {
-        // ID 유형의 요청만 허용하고 이메일과 연결된 로그인 아이디를 반환한다.
         if (!"ID".equalsIgnoreCase(request.getType())) {
             throw new IllegalArgumentException("아이디 찾기 요청만 지원합니다.");
         }
@@ -207,8 +207,8 @@ public class AuthService {
         }
 
         if ("SEND".equalsIgnoreCase(request.getAction())) {
+            // 인증번호를 새로 발급하고 1분 재전송 제한과 3분 만료 시각을 함께 기록한다.
             TwoFactorSession session = mfaSessions.getOrDefault(destination, new TwoFactorSession());
-            // 같은 인증 대상으로는 1분마다 새 코드를 생성할 수 있고, 생성된 코드는 3분간 유효하다.
             if (session.getLastSentAt() != null && session.getLastSentAt().plusMinutes(1).isAfter(LocalDateTime.now())) {
                 throw new IllegalStateException("인증번호는 1분마다 재발송할 수 있습니다.");
             }
@@ -219,15 +219,14 @@ public class AuthService {
             session.setFailureCount(0);
             session.setVerified(false);
             mfaSessions.put(destination, session);
-            // 현재 구현은 외부 문자·이메일 발송 대신 생성된 인증 코드를 서버 콘솔에 출력한다.
             System.out.println("[" + destination + "] 발송된 2FA 코드: " + code);
 
             return null;
 
         } else if ("VERIFY".equalsIgnoreCase(request.getAction())) {
+            // 만료 시각과 실패 횟수를 확인한 뒤 일치하는 인증번호만 검증 완료 처리한다.
             TwoFactorSession session = mfaSessions.get(destination);
             if (session == null) throw new IllegalArgumentException("인증번호 발송 이력이 없습니다.");
-            // 인증 실패가 5회 누적되면 임시 세션을 제거해 새 인증 코드를 생성하도록 한다.
             if (session.getFailureCount() >= 5) {
                 mfaSessions.remove(destination);
                 throw new IllegalStateException("인증 실패 횟수(5회)를 초과했습니다. 재발송해 주세요.");
@@ -247,8 +246,8 @@ public class AuthService {
             return createLoginSession(user, "2FA Verified Device");
 
         } else if ("SETUP".equalsIgnoreCase(request.getAction())) {
+            // VERIFY를 통과한 인증 대상만 2FA 사용 상태와 인증 방식을 계정에 반영한다.
             TwoFactorSession session = mfaSessions.get(destination);
-            // 코드 검증이 완료된 임시 세션이 있어야 2단계 인증 설정을 활성화한다.
             if (session == null || !session.isVerified()) {
                 throw new SecurityException("인증번호 검증(VERIFY)이 선행되어야 합니다.");
             }

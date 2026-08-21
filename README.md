@@ -83,21 +83,21 @@ FIRE 메모의 만료 시각은 `expiredAt`으로 관리합니다.
 
 ### TRASH
 
-만료되거나 사용자가 삭제한 메모를 임시 보관합니다.
+만료되거나 사용자가 삭제한 메모를 관리하는 영역입니다.
 
-- TRASH 목록 조회
+- TRASH 메모 목록 조회
 - 메모 복구
 - 여러 메모 선택
 - 선택 메모 영구 삭제
-- TRASH 이동 후 24시간이 지난 메모의 자동 영구 삭제
+- TRASH 이동 후 24시간이 지난 메모 자동 영구 삭제
 
-일반적인 메모 삭제는 데이터를 즉시 제거하지 않고 `deletedAt`을 기록해 TRASH로 이동하며, 영구 삭제는 별도의 API와 스케줄러를 통해 처리합니다.
+Bium에서는 **TRASH 이동과 영구 삭제를 서로 다른 동작으로 구분합니다.**
 
 ### User
 
 사용자 계정과 앱 설정을 관리합니다.
 
-- 일반 로그인 정보
+- 일반·Google 로그인 정보
 - 프로필
 - 언어 및 날짜 형식
 - 알림 설정
@@ -123,6 +123,7 @@ TeamSpace와 TeamMember를 중심으로 다음 데이터를 연결합니다.
 
 - 일반 회원가입
 - 일반 로그인
+- Google 소셜 로그인
 - Access Token / Refresh Token 발급
 - Access Token 재발급
 - 현재 기기 로그아웃
@@ -136,7 +137,7 @@ TeamSpace와 TeamMember를 중심으로 다음 데이터를 연결합니다.
 
 일반 로그인 비밀번호는 `BCryptPasswordEncoder`를 이용해 암호화된 비밀번호와 비교합니다.
 
-소셜 로그인 관련 코드는 최종 연동 전 단계이므로 현재 README의 완료 기능 목록에서는 제외합니다.
+Google 소셜 로그인은 클라이언트에서 전달받은 Google ID Token을 서버에서 검증한 뒤, 검증된 Google 사용자 정보를 기준으로 계정을 조회하거나 생성하고 Bium Access Token / Refresh Token을 발급하는 방식으로 구성되어 있습니다.
 
 ### JWT 인증
 
@@ -185,7 +186,7 @@ Spring Security는 서버 세션을 생성하지 않는 Stateless 방식으로 �
 - 메모 상세 조회
 - Rich Text 내용 저장 / 수정
 - 메모 이미지 정보 포함 상세 조회
-- FIRE / ICE 상태 변경
+- FIRE ↔ ICE 상태 변경
 - ICE 메모 고정 / 고정 해제
 - 메모 TRASH 이동
 - TRASH 목록 조회
@@ -418,7 +419,7 @@ Bium-Backend/
 
 | 기능 | 주요 경로 |
 | --- | --- |
-| 인증 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/find`, `/api/auth/2fa` |
+| 인증 | `/api/auth/signup`, `/api/auth/login`, `/api/auth/social-login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/find`, `/api/auth/2fa` |
 | 로그인 기기 | `/api/auth/devices`, `/api/auth/devices/{deviceId}` |
 | 사용자 | `/api/users/me`, `/api/users/me/settings`, `/api/users/search` |
 | 메모 | `/api/memos`, `/api/memos/{memoId}`, `/api/memos/{memoId}/status` |

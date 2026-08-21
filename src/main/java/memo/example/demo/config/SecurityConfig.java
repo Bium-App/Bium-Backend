@@ -66,9 +66,6 @@ public class SecurityConfig {
                                 "/api/auth/social-login",
                                 "/api/auth/refresh",
                                 "/api/auth/find",
-                                "/api/auth/verify-password",
-                                "/api/auth/2fa",
-                                "/api/files/presigned-url",
                                 "/api/service-notices/**"
                         ).permitAll()
 

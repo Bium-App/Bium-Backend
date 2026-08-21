@@ -2,6 +2,7 @@ package memo.example.demo.controller;
 
 import lombok.RequiredArgsConstructor;
 import memo.example.demo.DTO.response.SearchResponseDto;
+import memo.example.demo.config.jwt.LoginUser;
 import memo.example.demo.service.SearchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,7 +18,9 @@ public class SearchController {
     private final SearchService searchService;
 
     @GetMapping
-    public ResponseEntity<SearchResponseDto> globalSearch(@RequestParam(name = "keyword") String keyword) {
-        return ResponseEntity.ok(searchService.globalSearch(keyword));
+    public ResponseEntity<SearchResponseDto> globalSearch(
+            @LoginUser Long userId,
+            @RequestParam(name = "keyword") String keyword) {
+        return ResponseEntity.ok(searchService.globalSearch(userId, keyword));
     }
 }

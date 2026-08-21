@@ -1,6 +1,7 @@
 package memo.example.demo.controller;
 
 import lombok.RequiredArgsConstructor;
+import memo.example.demo.config.jwt.LoginUser;
 import memo.example.demo.service.MemoImageService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,19 +19,22 @@ public class MemoImageController {
     private final MemoImageService memoImageService;
 
     @PostMapping("/{memoId}/images")
-    public ResponseEntity<?> addMemoImage(@PathVariable Long memoId, @RequestBody Map<String, String> request) {
-        Long realImageId = memoImageService.addImageToMemo(memoId, request.get("imageUrl"));
+    public ResponseEntity<?> addMemoImage(
+            @LoginUser Long userId,
+            @PathVariable Long memoId,
+            @RequestBody Map<String, String> request) {
+        Long realImageId = memoImageService.addImageToMemo(userId, memoId, request.get("imageUrl"));
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("imageId", realImageId));
     }
 
     @GetMapping("/{memoId}/images")
-    public ResponseEntity<?> getMemoImages(@PathVariable Long memoId) {
-        return ResponseEntity.ok(memoImageService.getImagesByMemo(memoId));
+    public ResponseEntity<?> getMemoImages(@LoginUser Long userId, @PathVariable Long memoId) {
+        return ResponseEntity.ok(memoImageService.getImagesByMemo(userId, memoId));
     }
 
     @DeleteMapping("/images/{imageId}")
-    public ResponseEntity<Void> deleteMemoImage(@PathVariable Long imageId) {
-        memoImageService.deleteImage(imageId);
+    public ResponseEntity<Void> deleteMemoImage(@LoginUser Long userId, @PathVariable Long imageId) {
+        memoImageService.deleteImage(userId, imageId);
         return ResponseEntity.noContent().build();
     }
 }

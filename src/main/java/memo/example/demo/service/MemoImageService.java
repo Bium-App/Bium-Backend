@@ -21,11 +21,13 @@ import java.util.stream.Collectors;
 public class MemoImageService {
     private final MemoImageRepository memoImageRepository;
     private final MemoRepository memoRepository;
+    private final TeamAccessService teamAccessService;
 
-    public Long addImageToMemo(Long memoId, String imageUrl) {
+    public Long addImageToMemo(Long userId, Long memoId, String imageUrl) {
         // 이미지 파일 자체가 아니라 업로드된 파일의 URL을 메모와 연결해 저장한다.
         Memo memo = memoRepository.findById(memoId)
                 .orElseThrow(() -> new IllegalArgumentException("메모를 찾을 수 없습니다."));
+        requireMemoAccess(memo, userId);
         MemoImage memoImage = MemoImage.builder()
                 .memo(memo)
                 .imageUrl(imageUrl)
@@ -35,7 +37,10 @@ public class MemoImageService {
     }
 
     @Transactional(readOnly = true)
-    public List<MemoImageResponseDto> getImagesByMemo(Long memoId) {
+    public List<MemoImageResponseDto> getImagesByMemo(Long userId, Long memoId) {
+        Memo memo = memoRepository.findById(memoId)
+                .orElseThrow(() -> new IllegalArgumentException("메모를 찾을 수 없습니다."));
+        requireMemoAccess(memo, userId);
         return memoImageRepository.findByMemo_MemoId(memoId).stream()
                 .map(img -> MemoImageResponseDto.builder()
                         .imageId(img.getImageId())
@@ -44,7 +49,24 @@ public class MemoImageService {
                 .collect(Collectors.toList());
     }
 
-    public void deleteImage(Long imageId) {
-        memoImageRepository.deleteById(imageId);
+    public void deleteImage(Long userId, Long imageId) {
+        MemoImage image = memoImageRepository.findById(imageId)
+                .orElseThrow(() -> new IllegalArgumentException("메모 이미지를 찾을 수 없습니다."));
+        requireMemoAccess(image.getMemo(), userId);
+        memoImageRepository.delete(image);
     }
+
+    private void requireMemoAccess(Memo memo, Long userId) {
+        if (memo.getDeletedAt() != null) {
+            throw new IllegalArgumentException("휴지통에 있는 메모입니다.");
+        }
+        if (memo.getTeamSpace() == null) {
+            if (!memo.getUser().getUserId().equals(userId)) {
+                throw new SecurityException("다른 사용자의 메모입니다.");
+            }
+        } else {
+            teamAccessService.requireMember(memo.getTeamSpace().getTeamSpaceId(), userId);
+        }
+    }
+
 }

@@ -26,9 +26,10 @@ public interface MemoRepository extends JpaRepository<Memo, Long> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Memo m SET m.deletedAt = :now " +
             "WHERE m.expiredAt IS NOT NULL " +
+            "AND m.status = :status " +
             "AND m.expiredAt <= :now " +
             "AND m.deletedAt IS NULL")
-    int expireMemosToTrash(@Param("now") LocalDateTime now);
+    int expireMemosToTrash(@Param("now") LocalDateTime now, @Param("status") Memo.MemoStatus status);
 
     // 삭제 시각을 기준으로 TRASH 보관 기한이 지난 메모를 찾는다.
     List<Memo> findByDeletedAtIsNotNullAndDeletedAtLessThanEqual(LocalDateTime dateTime);

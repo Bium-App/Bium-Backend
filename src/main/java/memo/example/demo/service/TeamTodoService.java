@@ -27,11 +27,13 @@ public class TeamTodoService {
     private final TeamTodoRepository teamTodoRepository;
     private final TeamSpaceRepository teamSpaceRepository;
     private final UserRepository userRepository;
+    private final TeamAccessService teamAccessService;
 
     public void createTodo(Long teamSpaceId, Long userId, TeamTodoRequestDto request) {
         // 새 할 일은 미완료 상태로 만들고 sendPush는 설정값만 저장한다.
         // 이 Service에서는 실제 푸시 알림을 발송하지 않는다.
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId).orElseThrow();
+        teamAccessService.requireMember(teamSpaceId, userId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         User user = userRepository.findById(userId).orElseThrow();
 
         TeamTodo todo = TeamTodo.builder()
@@ -47,21 +49,24 @@ public class TeamTodoService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamTodoResponseDto> getTodosByTeamSpace(Long teamSpaceId) {
+    public List<TeamTodoResponseDto> getTodosByTeamSpace(Long userId, Long teamSpaceId) {
+        teamAccessService.requireMember(teamSpaceId, userId);
         return teamTodoRepository.findByTeamSpace_TeamSpaceId(teamSpaceId).stream()
                 .map(TeamTodoResponseDto::from)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public TeamTodoResponseDto getTodoDetail(Long todoId) {
+    public TeamTodoResponseDto getTodoDetail(Long userId, Long todoId) {
         TeamTodo t = teamTodoRepository.findById(todoId)
                 .orElseThrow(() -> new IllegalArgumentException("할 일을 찾을 수 없습니다."));
+        teamAccessService.requireMember(t.getTeamSpace().getTeamSpaceId(), userId);
         return TeamTodoResponseDto.from(t);
     }
 
-    public void updateTodo(Long todoId, TeamTodoUpdateRequestDto request) {
+    public void updateTodo(Long userId, Long todoId, TeamTodoUpdateRequestDto request) {
         TeamTodo todo = teamTodoRepository.findById(todoId).orElseThrow();
+        teamAccessService.requireMember(todo.getTeamSpace().getTeamSpaceId(), userId);
         // 요청에 포함된 값만 변경해 기존 할 일의 나머지 정보는 유지한다.
         if (request.getTitle() != null) todo.setTitle(request.getTitle());
         if (request.getContent() != null) todo.setContent(request.getContent());
@@ -70,7 +75,9 @@ public class TeamTodoService {
         if (request.getSendPush() != null) todo.setSendPush(request.getSendPush());
     }
 
-    public void deleteTodo(Long todoId) {
-        teamTodoRepository.deleteById(todoId);
+    public void deleteTodo(Long userId, Long todoId) {
+        TeamTodo todo = teamTodoRepository.findById(todoId).orElseThrow();
+        teamAccessService.requireMember(todo.getTeamSpace().getTeamSpaceId(), userId);
+        teamTodoRepository.delete(todo);
     }
 }

@@ -37,21 +37,24 @@ public class TeamSpaceController {
     }
 
     @GetMapping("/{teamSpaceId}")
-    public ResponseEntity<?> getTeamSpaceDetail(@PathVariable Long teamSpaceId) {
-        return ResponseEntity.ok(teamSpaceService.getTeamSpace(teamSpaceId));
+    public ResponseEntity<?> getTeamSpaceDetail(@LoginUser Long userId, @PathVariable Long teamSpaceId) {
+        return ResponseEntity.ok(teamSpaceService.getTeamSpace(userId, teamSpaceId));
     }
 
     @PatchMapping("/{teamSpaceId}")
     public ResponseEntity<MessageResponseDto> updateTeamSpace(
+            @LoginUser Long userId,
             @PathVariable Long teamSpaceId,
             @RequestBody TeamSpaceRequestDto request) {
-        teamSpaceService.updateTeamSpaceName(teamSpaceId, request);
+        teamSpaceService.updateTeamSpaceName(userId, teamSpaceId, request);
         return ResponseEntity.ok(new MessageResponseDto("팀 스페이스 이름이 수정되었습니다."));
     }
 
     @DeleteMapping("/{teamSpaceId}")
-    public ResponseEntity<MessageResponseDto> deleteTeamSpace(@PathVariable Long teamSpaceId) {
-        teamSpaceService.deleteTeamSpace(teamSpaceId);
+    public ResponseEntity<MessageResponseDto> deleteTeamSpace(
+            @LoginUser Long userId,
+            @PathVariable Long teamSpaceId) {
+        teamSpaceService.deleteTeamSpace(userId, teamSpaceId);
         return ResponseEntity.ok(new MessageResponseDto("팀 스페이스가 삭제되었습니다."));
     }
 }

@@ -20,13 +20,22 @@ public class SearchService {
     private final MemoRepository memoRepository;
     private final TeamTodoRepository teamTodoRepository;
     private final ScheduleRepository scheduleRepository;
+    private final TeamAccessService teamAccessService;
 
-    public SearchResponseDto globalSearch(String keyword) {
+    public SearchResponseDto globalSearch(Long userId, String keyword) {
         List<MemoResponseDto> memos = memoRepository.searchByKeyword(keyword).stream()
+                .filter(memo -> memo.getDeletedAt() == null)
+                .filter(memo -> memo.getTeamSpace() == null
+                        ? memo.getUser().getUserId().equals(userId)
+                        : teamAccessService.canAccess(memo.getTeamSpace().getTeamSpaceId(), userId))
                 .map(MemoResponseDto::from).collect(Collectors.toList());
         List<TeamTodoResponseDto> todos = teamTodoRepository.searchByKeyword(keyword).stream()
+                .filter(todo -> teamAccessService.canAccess(todo.getTeamSpace().getTeamSpaceId(), userId))
                 .map(TeamTodoResponseDto::from).collect(Collectors.toList());
         List<ScheduleResponseDto> schedules = scheduleRepository.searchByKeyword(keyword).stream()
+                .filter(schedule -> schedule.getTeamSpace() == null
+                        ? schedule.getUser().getUserId().equals(userId)
+                        : teamAccessService.canAccess(schedule.getTeamSpace().getTeamSpaceId(), userId))
                 .map(ScheduleResponseDto::from).collect(Collectors.toList());
 
         return SearchResponseDto.builder()

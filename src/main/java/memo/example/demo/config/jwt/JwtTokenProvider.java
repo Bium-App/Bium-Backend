@@ -4,6 +4,7 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
@@ -20,7 +21,10 @@ public class JwtTokenProvider {
     private final long accessTokenValidityInMilliseconds = 1000L * 60 * 30;
     private final long refreshTokenValidityInMilliseconds = 1000L * 60 * 60 * 24 * 14;
 
-    public JwtTokenProvider(@Value("${jwt.secret:MySuperSecretKeyForBlazeMemoProjectNeedToBeVeryLong20260729}") String secretKey) {
+    public JwtTokenProvider(@Value("${jwt.secret}") String secretKey) {
+        if (!StringUtils.hasText(secretKey) || secretKey.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("jwt.secret은 32바이트 이상의 값으로 설정해야 합니다.");
+        }
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
 

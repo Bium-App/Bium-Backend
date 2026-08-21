@@ -28,6 +28,7 @@ public class TeamSpaceService {
     private final TeamSpaceRepository teamSpaceRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final UserRepository userRepository;
+    private final TeamAccessService teamAccessService;
 
     public Long createTeamSpace(Long userId, TeamSpaceCreateRequestDto request) {
         // TeamSpace 생성자를 LEADER 역할의 첫 번째 구성원으로 등록한다.
@@ -55,31 +56,25 @@ public class TeamSpaceService {
     }
 
     @Transactional(readOnly = true)
-    public TeamSpaceResponseDto getTeamSpace(Long teamSpaceId) {
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId)
-                .orElseThrow(() -> new IllegalArgumentException("팀 스페이스를 찾을 수 없습니다."));
-
-        // deletedAt이 기록된 TeamSpace는 상세 조회 대상에서 제외한다.
-        if (teamSpace.getDeletedAt() != null) {
-            throw new IllegalArgumentException("삭제된 팀 스페이스입니다.");
-        }
+    public TeamSpaceResponseDto getTeamSpace(Long userId, Long teamSpaceId) {
+        TeamSpace teamSpace = teamAccessService.requireMember(teamSpaceId, userId).getTeamSpace();
 
         Integer memberCount = teamMemberRepository.findByTeamSpace_TeamSpaceId(teamSpaceId).size();
         return TeamSpaceResponseDto.from(teamSpace, memberCount);
     }
 
-    public void updateTeamSpaceName(Long teamSpaceId, TeamSpaceRequestDto request) {
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId)
-                .orElseThrow(() -> new IllegalArgumentException("팀 스페이스를 찾을 수 없습니다."));
+    public void updateTeamSpaceName(Long userId, Long teamSpaceId, TeamSpaceRequestDto request) {
+        teamAccessService.requireLeader(teamSpaceId, userId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         if (request.getName() != null && !request.getName().isBlank()) {
             teamSpace.setName(request.getName());
         }
     }
 
-    public void deleteTeamSpace(Long teamSpaceId) {
+    public void deleteTeamSpace(Long userId, Long teamSpaceId) {
         // 레코드를 즉시 제거하지 않고 삭제 시각을 기록해 soft delete 처리한다.
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId)
-                .orElseThrow(() -> new IllegalArgumentException("팀 스페이스를 찾을 수 없습니다."));
+        teamAccessService.requireLeader(teamSpaceId, userId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         teamSpace.setDeletedAt(LocalDateTime.now());
     }
 }

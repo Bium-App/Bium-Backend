@@ -22,14 +22,14 @@ public class NotificationController {
     }
 
     @PatchMapping("/{id}/read")
-    public ResponseEntity<MessageResponseDto> readNotification(@PathVariable Long id) {
-        notificationService.markAsRead(id);
+    public ResponseEntity<MessageResponseDto> readNotification(@LoginUser Long userId, @PathVariable Long id) {
+        notificationService.markAsRead(userId, id);
         return ResponseEntity.ok(new MessageResponseDto("알림 읽음 처리 완료"));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<MessageResponseDto> deleteNotification(@PathVariable Long id) {
-        notificationService.deleteNotification(id);
+    public ResponseEntity<MessageResponseDto> deleteNotification(@LoginUser Long userId, @PathVariable Long id) {
+        notificationService.deleteNotification(userId, id);
         return ResponseEntity.ok(new MessageResponseDto("알림 삭제 완료"));
     }
 }

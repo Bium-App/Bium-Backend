@@ -56,20 +56,25 @@ public class FriendController {
 
     @PatchMapping("/requests/{requestId}")
     public ResponseEntity<MessageResponseDto> respondToRequest(
+            @LoginUser Long userId,
             @PathVariable Long requestId,
             @RequestParam(name = "action") String action) {
         // ACCEPT는 친구 관계를 수락하고 REJECT는 거절 상태로 변경한다.
         if ("ACCEPT".equalsIgnoreCase(action)) {
-            friendService.acceptRequest(requestId);
+            friendService.acceptRequest(userId, requestId);
         } else if ("REJECT".equalsIgnoreCase(action)) {
-            friendService.rejectRequest(requestId);
+            friendService.rejectRequest(userId, requestId);
+        } else {
+            throw new IllegalArgumentException("지원하지 않는 친구 요청 액션입니다.");
         }
         return ResponseEntity.ok(new MessageResponseDto("처리 완료되었습니다."));
     }
 
     @DeleteMapping("/requests/{requestId}")
-    public ResponseEntity<MessageResponseDto> cancelRequest(@PathVariable Long requestId) {
-        friendService.cancelRequest(requestId);
+    public ResponseEntity<MessageResponseDto> cancelRequest(
+            @LoginUser Long userId,
+            @PathVariable Long requestId) {
+        friendService.cancelRequest(userId, requestId);
         return ResponseEntity.ok(new MessageResponseDto("처리 완료되었습니다."));
     }
 }

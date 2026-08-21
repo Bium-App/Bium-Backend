@@ -84,18 +84,26 @@ public class FriendService {
                 .collect(Collectors.toList());
     }
 
-    public void acceptRequest(Long requestId) {
-        Friend friend = friendRepository.findById(requestId).orElseThrow();
+    public void acceptRequest(Long userId, Long requestId) {
+        Friend friend = requirePendingReceiverRequest(userId, requestId);
         friend.setStatus(FriendStatus.ACCEPTED);
     }
 
-    public void rejectRequest(Long requestId) {
-        Friend friend = friendRepository.findById(requestId).orElseThrow();
+    public void rejectRequest(Long userId, Long requestId) {
+        Friend friend = requirePendingReceiverRequest(userId, requestId);
         friend.setStatus(FriendStatus.REJECTED);
     }
 
-    public void cancelRequest(Long requestId) {
-        friendRepository.deleteById(requestId);
+    public void cancelRequest(Long userId, Long requestId) {
+        Friend friend = friendRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("친구 요청을 찾을 수 없습니다."));
+        if (!friend.getRequester().getUserId().equals(userId)) {
+            throw new SecurityException("친구 요청을 보낸 사용자만 취소할 수 있습니다.");
+        }
+        if (friend.getStatus() != FriendStatus.PENDING) {
+            throw new IllegalStateException("대기 중인 친구 요청만 취소할 수 있습니다.");
+        }
+        friendRepository.delete(friend);
     }
 
     @Transactional(readOnly = true)
@@ -115,5 +123,17 @@ public class FriendService {
                 .forEach(f -> friends.add(FriendResponseDto.from(f.getRequester())));
 
         return friends;
+    }
+
+    private Friend requirePendingReceiverRequest(Long userId, Long requestId) {
+        Friend friend = friendRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("친구 요청을 찾을 수 없습니다."));
+        if (!friend.getReceiver().getUserId().equals(userId)) {
+            throw new SecurityException("친구 요청을 받은 사용자만 처리할 수 있습니다.");
+        }
+        if (friend.getStatus() != FriendStatus.PENDING) {
+            throw new IllegalStateException("대기 중인 친구 요청만 처리할 수 있습니다.");
+        }
+        return friend;
     }
 }

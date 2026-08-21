@@ -26,10 +26,12 @@ public class TeamFileService {
     private final TeamFileRepository teamFileRepository;
     private final TeamSpaceRepository teamSpaceRepository;
     private final UserRepository userRepository;
+    private final TeamAccessService teamAccessService;
 
     public void saveFileInfo(Long teamSpaceId, Long userId, TeamFileRequestDto request) {
         // 실제 파일은 S3에 두고 이 Service는 파일 URL과 이름, 크기 및 업로더를 저장한다.
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId).orElseThrow();
+        teamAccessService.requireMember(teamSpaceId, userId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         User user = userRepository.findById(userId).orElseThrow();
 
         TeamFile teamFile = TeamFile.builder()
@@ -43,7 +45,8 @@ public class TeamFileService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamFileResponseDto> getTeamFiles(Long teamSpaceId) {
+    public List<TeamFileResponseDto> getTeamFiles(Long userId, Long teamSpaceId) {
+        teamAccessService.requireMember(teamSpaceId, userId);
         List<TeamFile> files = teamFileRepository.findByTeamSpace_TeamSpaceId(teamSpaceId);
         if (files == null || files.isEmpty()) {
             return Collections.emptyList();
@@ -53,13 +56,17 @@ public class TeamFileService {
                 .collect(Collectors.toList());
     }
 
-    public void renameFile(Long fileId, String newFileName) {
+    public void renameFile(Long userId, Long fileId, String newFileName) {
         TeamFile teamFile = teamFileRepository.findById(fileId)
                 .orElseThrow(() -> new IllegalArgumentException("파일을 찾을 수 없습니다."));
+        teamAccessService.requireMember(teamFile.getTeamSpace().getTeamSpaceId(), userId);
         teamFile.setFileName(newFileName);
     }
 
-    public void deleteFile(Long fileId) {
-        teamFileRepository.deleteById(fileId);
+    public void deleteFile(Long userId, Long fileId) {
+        TeamFile teamFile = teamFileRepository.findById(fileId)
+                .orElseThrow(() -> new IllegalArgumentException("파일을 찾을 수 없습니다."));
+        teamAccessService.requireMember(teamFile.getTeamSpace().getTeamSpaceId(), userId);
+        teamFileRepository.delete(teamFile);
     }
 }

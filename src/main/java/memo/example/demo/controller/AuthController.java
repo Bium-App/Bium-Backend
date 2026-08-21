@@ -61,13 +61,15 @@ public class AuthController {
     }
 
     @PostMapping("/verify-password")
-    public ResponseEntity<?> verifyPassword(@RequestBody VerifyPasswordRequestDto request) {
-        return ResponseEntity.ok(Map.of("isMatched", true));
+    public ResponseEntity<?> verifyPassword(
+            @LoginUser Long userId,
+            @RequestBody VerifyPasswordRequestDto request) {
+        return ResponseEntity.ok(Map.of("isMatched", authService.verifyPassword(userId, request.getPassword())));
     }
 
     @PostMapping("/2fa")
-    public ResponseEntity<?> handle2FA(@RequestBody TwoFactorRequestDto request) {
-        Object result = authService.handle2FA(request);
+    public ResponseEntity<?> handle2FA(@LoginUser Long userId, @RequestBody TwoFactorRequestDto request) {
+        Object result = authService.handle2FA(userId, request);
         if (result instanceof LoginResponseDto) {
             return ResponseEntity.ok(result);
         }

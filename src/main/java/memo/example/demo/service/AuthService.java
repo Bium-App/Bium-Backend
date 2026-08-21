@@ -16,6 +16,7 @@ import memo.example.demo.domain.Device;
 import memo.example.demo.domain.User;
 import memo.example.demo.repository.DeviceRepository;
 import memo.example.demo.repository.UserRepository;
+import memo.example.demo.service.GoogleIdTokenService.VerifiedGoogleUser;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +25,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -40,9 +41,11 @@ public class AuthService {
     private final DeviceRepository deviceRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
+    private final GoogleIdTokenService googleIdTokenService;
 
     // 인증 대상별 2FA 코드와 만료·재전송·실패 상태를 서버 메모리에 임시 보관한다.
     private final Map<String, TwoFactorSession> mfaSessions = new ConcurrentHashMap<>();
+    private final SecureRandom secureRandom = new SecureRandom();
 
     @Getter
     @Setter
@@ -66,7 +69,7 @@ public class AuthService {
                 .nickname(request.getNickname())
                 .email(request.getEmail())
                 .phoneNumber(request.getPhoneNumber())
-                .provider(request.getProvider())
+                .provider("LOCAL")
                 .build();
         return userRepository.save(user).getUserId();
     }
@@ -75,7 +78,8 @@ public class AuthService {
         // 아이디와 비밀번호를 검증한 뒤 Access/Refresh Token과 기기 세션을 생성한다.
         User user = userRepository.findByLoginId(request.getLoginId())
                 .orElseThrow(() -> new IllegalArgumentException("아이디 또는 비밀번호가 일치하지 않습니다."));
-        if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (user.getDeletedAt() != null || user.getPassword() == null
+                || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new IllegalArgumentException("아이디 또는 비밀번호가 일치하지 않습니다.");
         }
 
@@ -83,30 +87,42 @@ public class AuthService {
     }
 
     public Map<String, Object> socialLogin(SocialLoginRequestDto request) {
-        // 클라이언트가 전달한 소셜 사용자 정보를 이메일 기준으로 기존 계정에 연결하거나 신규 계정을 생성한다.
+        if (!"GOOGLE".equalsIgnoreCase(request.getProvider())) {
+            throw new IllegalArgumentException("지원하지 않는 소셜 로그인 제공자입니다.");
+        }
+
+        VerifiedGoogleUser googleUser = googleIdTokenService.verify(request.getIdToken());
         boolean isNewUser = false;
-        Optional<User> optionalUser = userRepository.findByEmail(request.getEmail());
         User user;
 
-        if (optionalUser.isPresent()) {
-            user = optionalUser.get();
-            if ("LOCAL".equals(user.getProvider())) {
-                user.setProvider(request.getProvider());
-                user.setProviderId(request.getProviderId());
+        Optional<User> providerUser = userRepository.findByProviderAndProviderId("GOOGLE", googleUser.subject());
+        if (providerUser.isPresent()) {
+            user = providerUser.get();
+            if (user.getDeletedAt() != null) {
+                throw new IllegalArgumentException("탈퇴한 계정은 로그인할 수 없습니다.");
             }
         } else {
-            isNewUser = true;
-            String uniqueLoginId = request.getProvider().toLowerCase() + "_" + UUID.randomUUID().toString().substring(0, 8);
+            Optional<User> emailUser = userRepository.findByEmail(googleUser.email());
+            if (emailUser.isPresent()) {
+                if (emailUser.get().getDeletedAt() != null) {
+                    throw new IllegalArgumentException("탈퇴한 계정은 로그인할 수 없습니다.");
+                }
+                throw new IllegalStateException("동일한 이메일의 다른 로그인 계정이 이미 존재합니다.");
+            }
 
+            isNewUser = true;
+            String displayName = truncate(
+                    googleUser.name() != null && !googleUser.name().isBlank() ? googleUser.name() : "Google 사용자",
+                    55);
             user = User.builder()
-                    .loginId(uniqueLoginId)
+                    .loginId("google_" + UUID.randomUUID().toString().substring(0, 8))
                     .password(null)
-                    .name(request.getName() != null ? request.getName() : "소셜회원")
-                    .nickname(request.getName() != null ? request.getName() : "소셜회원")
-                    .email(request.getEmail())
-                    .provider(request.getProvider())
-                    .providerId(request.getProviderId())
-                    .profileImageUrl(request.getProfileImageUrl())
+                    .name(displayName)
+                    .nickname(truncate(displayName, 10))
+                    .email(googleUser.email())
+                    .provider("GOOGLE")
+                    .providerId(googleUser.subject())
+                    .profileImageUrl(googleUser.profileImageUrl())
                     .build();
             userRepository.save(user);
         }
@@ -125,6 +141,9 @@ public class AuthService {
 
     private LoginResponseDto createLoginSession(User user, String deviceName) {
         // 앱 JWT를 발급하고 Refresh Token을 Device에 저장해 로그인 기기 세션을 구성한다.
+        if (user.getDeletedAt() != null) {
+            throw new IllegalArgumentException("탈퇴한 계정은 로그인할 수 없습니다.");
+        }
         String accessToken = jwtTokenProvider.createAccessToken(user.getUserId());
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getUserId());
         Device device = Device.builder()
@@ -144,8 +163,16 @@ public class AuthService {
 
     public LoginResponseDto refreshToken(String refreshToken) {
         // 저장된 Refresh Token을 검증한 뒤 Access/Refresh Token을 함께 갱신한다.
+        if (refreshToken == null || !jwtTokenProvider.validateToken(refreshToken)) {
+            throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
+        }
         Device device = deviceRepository.findByRefreshToken(refreshToken)
                 .orElseThrow(() -> new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다."));
+        if (device.getUser().getDeletedAt() != null
+                || !device.getUser().getUserId().equals(jwtTokenProvider.getUserIdFromToken(refreshToken))) {
+            deviceRepository.delete(device);
+            throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
+        }
         if (device.getExpiresAt().isBefore(LocalDateTime.now())) {
             deviceRepository.delete(device);
             throw new IllegalArgumentException("리프레시 토큰이 만료되었습니다.");
@@ -185,6 +212,15 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
+    public boolean verifyPassword(Long userId, String password) {
+        User user = requireActiveUser(userId);
+        return "LOCAL".equalsIgnoreCase(user.getProvider())
+                && user.getPassword() != null
+                && password != null
+                && passwordEncoder.matches(password, user.getPassword());
+    }
+
+    @Transactional(readOnly = true)
     public String findLoginId(FindIdPwRequestDto request) {
         if (!"ID".equalsIgnoreCase(request.getType())) {
             throw new IllegalArgumentException("아이디 찾기 요청만 지원합니다.");
@@ -198,13 +234,15 @@ public class AuthService {
                 .orElseThrow(() -> new IllegalArgumentException("해당 이메일로 가입된 사용자를 찾을 수 없습니다."));
     }
 
-    public Object handle2FA(TwoFactorRequestDto request) {
+    public Object handle2FA(Long userId, TwoFactorRequestDto request) {
+        User user = requireActiveUser(userId);
         String method = request.getMethod() != null ? request.getMethod().toUpperCase() : "PHONE";
         String destination = "EMAIL".equals(method) ? request.getEmail() : request.getPhoneNumber();
 
-        if (destination == null || destination.isBlank()) {
-            throw new IllegalArgumentException("인증 대상 정보가 누락되었습니다.");
+        if (!("EMAIL".equals(method) || "PHONE".equals(method))) {
+            throw new IllegalArgumentException("지원하지 않는 2FA 인증 방식입니다.");
         }
+        validateTwoFactorDestination(user, method, destination);
 
         if ("SEND".equalsIgnoreCase(request.getAction())) {
             // 인증번호를 새로 발급하고 1분 재전송 제한과 3분 만료 시각을 함께 기록한다.
@@ -212,14 +250,13 @@ public class AuthService {
             if (session.getLastSentAt() != null && session.getLastSentAt().plusMinutes(1).isAfter(LocalDateTime.now())) {
                 throw new IllegalStateException("인증번호는 1분마다 재발송할 수 있습니다.");
             }
-            String code = String.format("%06d", new Random().nextInt(1000000));
+            String code = String.format("%06d", secureRandom.nextInt(1000000));
             session.setCode(code);
             session.setExpiresAt(LocalDateTime.now().plusMinutes(3));
             session.setLastSentAt(LocalDateTime.now());
             session.setFailureCount(0);
             session.setVerified(false);
             mfaSessions.put(destination, session);
-            System.out.println("[" + destination + "] 발송된 2FA 코드: " + code);
 
             return null;
 
@@ -237,31 +274,39 @@ public class AuthService {
                 throw new InvalidCodeException("잘못된 인증번호입니다. (남은 횟수: " + (5 - session.getFailureCount()) + ")");
             }
 
-            session.setVerified(true);
-
-            User user = "EMAIL".equals(method)
-                    ? userRepository.findByEmail(destination).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."))
-                    : userRepository.findByPhoneNumber(destination).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-
-            return createLoginSession(user, "2FA Verified Device");
-
-        } else if ("SETUP".equalsIgnoreCase(request.getAction())) {
-            // VERIFY를 통과한 인증 대상만 2FA 사용 상태와 인증 방식을 계정에 반영한다.
-            TwoFactorSession session = mfaSessions.get(destination);
-            if (session == null || !session.isVerified()) {
-                throw new SecurityException("인증번호 검증(VERIFY)이 선행되어야 합니다.");
-            }
-
-            User user = "EMAIL".equals(method)
-                    ? userRepository.findByEmail(destination).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."))
-                    : userRepository.findByPhoneNumber(destination).orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
             user.setUse2fa(true);
             user.setTwoFactorMethod(method);
-
             mfaSessions.remove(destination);
+            return null;
+
+        } else if ("SETUP".equalsIgnoreCase(request.getAction())) {
+            // Frontend는 SETUP 후 SEND를 호출하므로 여기서는 검증할 방식만 확인한다.
             return null;
         } else {
             throw new IllegalArgumentException("지원하지 않는 인증 액션입니다.");
         }
+    }
+
+    private User requireActiveUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        if (user.getDeletedAt() != null) {
+            throw new IllegalArgumentException("탈퇴한 사용자입니다.");
+        }
+        return user;
+    }
+
+    private void validateTwoFactorDestination(User user, String method, String destination) {
+        if (destination == null || destination.isBlank()) {
+            throw new IllegalArgumentException("인증 대상 정보가 누락되었습니다.");
+        }
+        String registeredDestination = "EMAIL".equals(method) ? user.getEmail() : user.getPhoneNumber();
+        if (registeredDestination == null || !registeredDestination.equalsIgnoreCase(destination.trim())) {
+            throw new SecurityException("현재 사용자의 등록된 인증 대상과 일치하지 않습니다.");
+        }
+    }
+
+    private String truncate(String value, int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 }

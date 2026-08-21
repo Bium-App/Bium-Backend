@@ -29,26 +29,31 @@ public class TeamTodoController {
     }
 
     @GetMapping("/todos")
-    public ResponseEntity<?> getTodos(@RequestParam(name = "teamSpaceId") Long teamSpaceId) {
-        return ResponseEntity.ok(teamTodoService.getTodosByTeamSpace(teamSpaceId));
+    public ResponseEntity<?> getTodos(
+            @LoginUser Long userId,
+            @RequestParam(name = "teamSpaceId") Long teamSpaceId) {
+        return ResponseEntity.ok(teamTodoService.getTodosByTeamSpace(userId, teamSpaceId));
     }
 
     @GetMapping("/todos/{todoId}")
-    public ResponseEntity<?> getTodoDetail(@PathVariable Long todoId) {
-        return ResponseEntity.ok(teamTodoService.getTodoDetail(todoId));
+    public ResponseEntity<?> getTodoDetail(@LoginUser Long userId, @PathVariable Long todoId) {
+        return ResponseEntity.ok(teamTodoService.getTodoDetail(userId, todoId));
     }
 
     @PatchMapping("/todos/{todoId}")
     public ResponseEntity<MessageResponseDto> updateTodo(
+            @LoginUser Long userId,
             @PathVariable Long todoId,
             @RequestBody TeamTodoUpdateRequestDto request) {
-        teamTodoService.updateTodo(todoId, request);
+        teamTodoService.updateTodo(userId, todoId, request);
         return ResponseEntity.ok(new MessageResponseDto("할 일 업데이트 완료"));
     }
 
     @DeleteMapping("/todos/{todoId}")
-    public ResponseEntity<MessageResponseDto> deleteTodo(@PathVariable Long todoId) {
-        teamTodoService.deleteTodo(todoId);
+    public ResponseEntity<MessageResponseDto> deleteTodo(
+            @LoginUser Long userId,
+            @PathVariable Long todoId) {
+        teamTodoService.deleteTodo(userId, todoId);
         return ResponseEntity.ok(new MessageResponseDto("할 일 삭제 완료"));
     }
 }

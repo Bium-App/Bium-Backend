@@ -26,11 +26,19 @@ public class TeamMemberService {
     private final TeamMemberRepository teamMemberRepository;
     private final TeamSpaceRepository teamSpaceRepository;
     private final UserRepository userRepository;
+    private final TeamAccessService teamAccessService;
 
-    public void addMember(Long teamSpaceId, Long userId, Role role) {
+    public void addMember(Long currentUserId, Long teamSpaceId, Long userId, Role role) {
         // 요청으로 전달된 LEADER 또는 MEMBER 역할을 사용해 TeamSpace 구성원을 등록한다.
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId).orElseThrow();
+        teamAccessService.requireLeader(teamSpaceId, currentUserId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         User user = userRepository.findById(userId).orElseThrow();
+        if (user.getDeletedAt() != null) {
+            throw new IllegalArgumentException("탈퇴한 사용자는 팀원으로 추가할 수 없습니다.");
+        }
+        if (teamMemberRepository.existsByTeamSpace_TeamSpaceIdAndUser_UserId(teamSpaceId, userId)) {
+            throw new IllegalStateException("이미 팀 스페이스에 참여 중인 사용자입니다.");
+        }
         TeamMember teamMember = TeamMember.builder()
                 .teamSpace(teamSpace)
                 .user(user)
@@ -40,19 +48,22 @@ public class TeamMemberService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamMemberResponseDto> getTeamMembers(Long teamSpaceId) {
-        return teamMemberRepository.findAll().stream()
-                .filter(tm -> tm.getTeamSpace().getTeamSpaceId().equals(teamSpaceId))
+    public List<TeamMemberResponseDto> getTeamMembers(Long currentUserId, Long teamSpaceId) {
+        teamAccessService.requireMember(teamSpaceId, currentUserId);
+        return teamMemberRepository.findByTeamSpace_TeamSpaceId(teamSpaceId).stream()
                 .map(TeamMemberResponseDto::from)
                 .collect(Collectors.toList());
     }
 
-    public void changeRole(Long teamMemberId, Role role) {
+    public void changeRole(Long currentUserId, Long teamMemberId, Role role) {
         TeamMember teamMember = teamMemberRepository.findById(teamMemberId).orElseThrow();
+        teamAccessService.requireLeader(teamMember.getTeamSpace().getTeamSpaceId(), currentUserId);
         teamMember.setRole(role);
     }
 
-    public void removeMember(Long teamMemberId) {
-        teamMemberRepository.deleteById(teamMemberId);
+    public void removeMember(Long currentUserId, Long teamMemberId) {
+        TeamMember teamMember = teamMemberRepository.findById(teamMemberId).orElseThrow();
+        teamAccessService.requireLeader(teamMember.getTeamSpace().getTeamSpaceId(), currentUserId);
+        teamMemberRepository.delete(teamMember);
     }
 }

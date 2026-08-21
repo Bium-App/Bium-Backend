@@ -35,27 +35,30 @@ public class ScheduleController {
 
         // teamSpaceId가 있으면 팀 일정을, 없으면 현재 사용자의 개인 일정을 월별로 조회한다.
         if (teamSpaceId != null) {
-            return ResponseEntity.ok(scheduleService.getTeamSchedulesByMonth(teamSpaceId, year, month));
+            return ResponseEntity.ok(scheduleService.getTeamSchedulesByMonth(userId, teamSpaceId, year, month));
         }
         return ResponseEntity.ok(scheduleService.getUserSchedulesByMonth(userId, year, month));
     }
 
     @GetMapping("/{scheduleId}")
-    public ResponseEntity<?> getScheduleDetail(@PathVariable Long scheduleId) {
-        return ResponseEntity.ok(scheduleService.getScheduleDetail(scheduleId));
+    public ResponseEntity<?> getScheduleDetail(@LoginUser Long userId, @PathVariable Long scheduleId) {
+        return ResponseEntity.ok(scheduleService.getScheduleDetail(userId, scheduleId));
     }
 
     @PatchMapping("/{scheduleId}")
     public ResponseEntity<MessageResponseDto> updateSchedule(
+            @LoginUser Long userId,
             @PathVariable Long scheduleId,
             @RequestBody ScheduleRequestDto request) {
-        scheduleService.updateSchedule(scheduleId, request);
+        scheduleService.updateSchedule(userId, scheduleId, request);
         return ResponseEntity.ok(new MessageResponseDto("일정 수정 완료"));
     }
 
     @DeleteMapping("/{scheduleId}")
-    public ResponseEntity<MessageResponseDto> deleteSchedule(@PathVariable Long scheduleId) {
-        scheduleService.deleteSchedule(scheduleId);
+    public ResponseEntity<MessageResponseDto> deleteSchedule(
+            @LoginUser Long userId,
+            @PathVariable Long scheduleId) {
+        scheduleService.deleteSchedule(userId, scheduleId);
         return ResponseEntity.ok(new MessageResponseDto("일정 삭제 완료"));
     }
 }

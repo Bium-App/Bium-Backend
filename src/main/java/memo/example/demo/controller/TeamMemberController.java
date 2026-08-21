@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import memo.example.demo.DTO.request.AddTeamMemberRequestDto;
 import memo.example.demo.DTO.response.MessageResponseDto;
 import memo.example.demo.domain.TeamMember.Role;
+import memo.example.demo.config.jwt.LoginUser;
 import memo.example.demo.service.TeamMemberService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,28 +21,32 @@ public class TeamMemberController {
 
     @PostMapping("/team-spaces/{teamSpaceId}/members")
     public ResponseEntity<MessageResponseDto> addTeamMember(
+            @LoginUser Long userId,
             @PathVariable Long teamSpaceId,
             @RequestBody AddTeamMemberRequestDto request) {
-        teamMemberService.addMember(teamSpaceId, request.getUserId(), Role.valueOf(request.getRole().toUpperCase()));
+        teamMemberService.addMember(userId, teamSpaceId, request.getUserId(), Role.valueOf(request.getRole().toUpperCase()));
         return ResponseEntity.status(HttpStatus.CREATED).body(new MessageResponseDto("팀원이 추가되었습니다."));
     }
 
     @GetMapping("/team-members/team/{teamSpaceId}")
-    public ResponseEntity<?> getTeamMembers(@PathVariable Long teamSpaceId) {
-        return ResponseEntity.ok(teamMemberService.getTeamMembers(teamSpaceId));
+    public ResponseEntity<?> getTeamMembers(@LoginUser Long userId, @PathVariable Long teamSpaceId) {
+        return ResponseEntity.ok(teamMemberService.getTeamMembers(userId, teamSpaceId));
     }
 
     @PatchMapping("/team-members/{memberId}")
     public ResponseEntity<MessageResponseDto> changeMemberRole(
+            @LoginUser Long userId,
             @PathVariable Long memberId,
             @RequestParam(name = "role") String role) {
-        teamMemberService.changeRole(memberId, Role.valueOf(role.toUpperCase()));
+        teamMemberService.changeRole(userId, memberId, Role.valueOf(role.toUpperCase()));
         return ResponseEntity.ok(new MessageResponseDto("역할이 변경되었습니다."));
     }
 
     @DeleteMapping("/team-members/{memberId}")
-    public ResponseEntity<MessageResponseDto> removeMember(@PathVariable Long memberId) {
-        teamMemberService.removeMember(memberId);
+    public ResponseEntity<MessageResponseDto> removeMember(
+            @LoginUser Long userId,
+            @PathVariable Long memberId) {
+        teamMemberService.removeMember(userId, memberId);
         return ResponseEntity.ok(new MessageResponseDto("팀원이 삭제되었습니다."));
     }
 }

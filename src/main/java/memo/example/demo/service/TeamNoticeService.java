@@ -32,9 +32,11 @@ public class TeamNoticeService {
     private final UserRepository userRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final NotificationRepository notificationRepository;
+    private final TeamAccessService teamAccessService;
 
     public void createNotice(Long teamSpaceId, Long userId, TeamNoticeRequestDto request) {
-        TeamSpace teamSpace = teamSpaceRepository.findById(teamSpaceId).orElseThrow();
+        teamAccessService.requireMember(teamSpaceId, userId);
+        TeamSpace teamSpace = teamAccessService.requireActiveTeamSpace(teamSpaceId);
         User user = userRepository.findById(userId).orElseThrow();
 
         TeamNotice notice = TeamNotice.builder()
@@ -62,27 +64,32 @@ public class TeamNoticeService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamNoticeResponseDto> getNotices(Long teamSpaceId) {
+    public List<TeamNoticeResponseDto> getNotices(Long userId, Long teamSpaceId) {
+        teamAccessService.requireMember(teamSpaceId, userId);
         return teamNoticeRepository.findByTeamSpace_TeamSpaceId(teamSpaceId).stream()
                 .map(TeamNoticeResponseDto::from)
                 .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
-    public TeamNoticeResponseDto getNoticeDetail(Long noticeId) {
+    public TeamNoticeResponseDto getNoticeDetail(Long userId, Long noticeId) {
         TeamNotice notice = teamNoticeRepository.findById(noticeId)
                 .orElseThrow(() -> new IllegalArgumentException("공지사항을 찾을 수 없습니다."));
+        teamAccessService.requireMember(notice.getTeamSpace().getTeamSpaceId(), userId);
         return TeamNoticeResponseDto.from(notice);
     }
 
-    public void updateNotice(Long noticeId, TeamNoticeRequestDto request) {
+    public void updateNotice(Long userId, Long noticeId, TeamNoticeRequestDto request) {
         TeamNotice notice = teamNoticeRepository.findById(noticeId).orElseThrow();
+        teamAccessService.requireMember(notice.getTeamSpace().getTeamSpaceId(), userId);
         if (request.getTitle() != null) notice.setTitle(request.getTitle());
         if (request.getContent() != null) notice.setContent(request.getContent());
         if (request.getIsPinned() != null) notice.setIsPinned(request.getIsPinned());
     }
 
-    public void deleteNotice(Long noticeId) {
-        teamNoticeRepository.deleteById(noticeId);
+    public void deleteNotice(Long userId, Long noticeId) {
+        TeamNotice notice = teamNoticeRepository.findById(noticeId).orElseThrow();
+        teamAccessService.requireMember(notice.getTeamSpace().getTeamSpaceId(), userId);
+        teamNoticeRepository.delete(notice);
     }
 }

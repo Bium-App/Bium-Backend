@@ -26,13 +26,21 @@ public class NotificationService {
                 .collect(Collectors.toList());
     }
 
-    public void markAsRead(Long notificationId) {
-        Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new IllegalArgumentException("알림을 찾을 수 없습니다."));
+    public void markAsRead(Long userId, Long notificationId) {
+        Notification notification = requireOwnedNotification(userId, notificationId);
         notification.setIsRead(true);
     }
 
-    public void deleteNotification(Long notificationId) {
-        notificationRepository.deleteById(notificationId);
+    public void deleteNotification(Long userId, Long notificationId) {
+        notificationRepository.delete(requireOwnedNotification(userId, notificationId));
+    }
+
+    private Notification requireOwnedNotification(Long userId, Long notificationId) {
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new IllegalArgumentException("알림을 찾을 수 없습니다."));
+        if (!notification.getUser().getUserId().equals(userId)) {
+            throw new SecurityException("다른 사용자의 알림입니다.");
+        }
+        return notification;
     }
 }

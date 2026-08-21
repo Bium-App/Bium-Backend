@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import memo.example.demo.DTO.request.UserProfileUpdateRequestDto;
 import memo.example.demo.DTO.request.UserSettingsUpdateRequestDto;
 import memo.example.demo.DTO.response.MessageResponseDto;
-import memo.example.demo.DTO.response.UserProfileResponseDto;
+import memo.example.demo.DTO.response.UserSearchResponseDto;
 import memo.example.demo.config.jwt.LoginUser;
 import memo.example.demo.service.UserService;
 import org.springframework.http.ResponseEntity;
@@ -56,7 +56,7 @@ public class UserController {
 
     @GetMapping("/search")
     public ResponseEntity<?> searchUsers(@RequestParam(name = "nickname") String nickname) {
-        List<UserProfileResponseDto> result = userService.searchUsersByKeyword(nickname);
+        List<UserSearchResponseDto> result = userService.searchUsersByKeyword(nickname);
         return ResponseEntity.ok(result != null && !result.isEmpty() ? result : Collections.emptyList());
     }
 }

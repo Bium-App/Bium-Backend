@@ -5,9 +5,11 @@ import memo.example.demo.DTO.request.SignUpRequestDto;
 import memo.example.demo.DTO.request.UserProfileUpdateRequestDto;
 import memo.example.demo.DTO.request.UserSettingsUpdateRequestDto;
 import memo.example.demo.DTO.response.UserProfileResponseDto;
+import memo.example.demo.DTO.response.UserSearchResponseDto;
 import memo.example.demo.DTO.response.UserSettingsResponseDto;
 import memo.example.demo.domain.User;
 import memo.example.demo.repository.UserRepository;
+import memo.example.demo.repository.DeviceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final DeviceRepository deviceRepository;
 
     public void createUser(SignUpRequestDto request) {
         User user = User.builder()
@@ -78,7 +81,12 @@ public class UserService {
         if (request.getTimezone() != null) user.setTimezone(request.getTimezone());
         if (request.getDateFormat() != null) user.setDateFormat(request.getDateFormat());
         if (request.getLanguage() != null) user.setLanguage(request.getLanguage());
-        if (request.getUse2fa() != null) user.setUse2fa(request.getUse2fa());
+        if (request.getUse2fa() != null) {
+            if (Boolean.TRUE.equals(request.getUse2fa()) && !Boolean.TRUE.equals(user.getUse2fa())) {
+                throw new SecurityException("2FA 활성화에는 인증번호 검증이 필요합니다.");
+            }
+            user.setUse2fa(request.getUse2fa());
+        }
         if (request.getAllowPush() != null) user.setAllowPush(request.getAllowPush());
         if (request.getAllowEvent() != null) user.setAllowEvent(request.getAllowEvent());
         if (request.getTwoFactorMethod() != null) user.setTwoFactorMethod(request.getTwoFactorMethod().toUpperCase());
@@ -87,17 +95,19 @@ public class UserService {
     public void deleteUser(Long userId) {
         User user = userRepository.findById(userId).orElseThrow();
         // 회원 정보는 유지하고 삭제 시각을 기록해 탈퇴 처리한다.
+        deviceRepository.deleteByUser_UserId(userId);
         user.setDeletedAt(LocalDateTime.now());
     }
 
     @Transactional(readOnly = true)
-    public List<UserProfileResponseDto> searchUsersByKeyword(String keyword) {
+    public List<UserSearchResponseDto> searchUsersByKeyword(String keyword) {
         // 공백뿐인 검색어는 전체 사용자 조회로 이어지지 않도록 빈 결과를 반환한다.
         if (keyword == null || keyword.trim().isEmpty()) {
             return Collections.emptyList();
         }
         return userRepository.searchByKeyword(keyword.trim()).stream()
-                .map(UserProfileResponseDto::from)
+                .filter(user -> user.getDeletedAt() == null)
+                .map(UserSearchResponseDto::from)
                 .collect(Collectors.toList());
     }
 

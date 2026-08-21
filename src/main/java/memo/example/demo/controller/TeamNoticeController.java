@@ -29,26 +29,31 @@ public class TeamNoticeController {
     }
 
     @GetMapping("/notices")
-    public ResponseEntity<?> getNotices(@RequestParam(name = "teamSpaceId") Long teamSpaceId) {
-        return ResponseEntity.ok(teamNoticeService.getNotices(teamSpaceId));
+    public ResponseEntity<?> getNotices(
+            @LoginUser Long userId,
+            @RequestParam(name = "teamSpaceId") Long teamSpaceId) {
+        return ResponseEntity.ok(teamNoticeService.getNotices(userId, teamSpaceId));
     }
 
     @GetMapping("/notices/{noticeId}")
-    public ResponseEntity<?> getNoticeDetail(@PathVariable Long noticeId) {
-        return ResponseEntity.ok(teamNoticeService.getNoticeDetail(noticeId));
+    public ResponseEntity<?> getNoticeDetail(@LoginUser Long userId, @PathVariable Long noticeId) {
+        return ResponseEntity.ok(teamNoticeService.getNoticeDetail(userId, noticeId));
     }
 
     @PatchMapping("/notices/{noticeId}")
     public ResponseEntity<MessageResponseDto> updateNotice(
+            @LoginUser Long userId,
             @PathVariable Long noticeId,
             @RequestBody TeamNoticeRequestDto request) {
-        teamNoticeService.updateNotice(noticeId, request);
+        teamNoticeService.updateNotice(userId, noticeId, request);
         return ResponseEntity.ok(new MessageResponseDto("공지가 수정되었습니다."));
     }
 
     @DeleteMapping("/notices/{noticeId}")
-    public ResponseEntity<MessageResponseDto> deleteNotice(@PathVariable Long noticeId) {
-        teamNoticeService.deleteNotice(noticeId);
+    public ResponseEntity<MessageResponseDto> deleteNotice(
+            @LoginUser Long userId,
+            @PathVariable Long noticeId) {
+        teamNoticeService.deleteNotice(userId, noticeId);
         return ResponseEntity.ok(new MessageResponseDto("공지가 삭제되었습니다."));
     }
 }
